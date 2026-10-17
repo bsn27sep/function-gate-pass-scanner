@@ -1,1 +1,73 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Function Gate Pass Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 500px;
+      margin: 20px auto;
+      padding: 16px;
+      text-align: center;
+    }
+    button {
+      padding: 12px 20px;
+      font-size: 18px;
+      margin: 10px;
+    }
+    #reader { margin-top: 20px; }
+    #result {
+      padding: 15px;
+      margin-top: 15px;
+      background: #eeeeee;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <h2>Function Gate Pass Scanner</h2>
+  <p>Camera test — QR scanning only</p>
+  <button id="start">Start Camera</button>
+  <button id="stop">Stop Camera</button>
+  <div id="reader"></div>
+  <div id="result">Waiting to start camera...</div>
+
+  <script>
+    let scanner = null;
+
+    document.getElementById("start").onclick = async function () {
+      const result = document.getElementById("result");
+      result.textContent = "Starting camera...";
+
+      try {
+        scanner = new Html5Qrcode("reader");
+        await scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: 250 },
+          function (text) {
+            result.textContent = "QR code scanned: " + text;
+          },
+          function () {}
+        );
+        result.textContent = "Camera started. Point it at a QR code.";
+      } catch (error) {
+        result.textContent = "Camera error: " + String(error);
+      }
+    };
+
+    document.getElementById("stop").onclick = async function () {
+      if (scanner && scanner.isScanning) {
+        await scanner.stop();
+        scanner.clear();
+        scanner = null;
+      }
+      document.getElementById("result").textContent = "Camera stopped.";
+    };
+  </script>
+</body>
+</html>
+
