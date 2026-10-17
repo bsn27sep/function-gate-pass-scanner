@@ -9,65 +9,161 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      max-width: 500px;
+      max-width: 600px;
       margin: 20px auto;
       padding: 16px;
       text-align: center;
+      background: #f4f6f8;
     }
-    button {
-      padding: 12px 20px;
-      font-size: 18px;
-      margin: 10px;
+    h2 { color: #17365d; }
+    #reader { width: 100%; margin: 15px auto; }
+    button, select {
+      padding: 12px;
+      margin: 6px;
+      font-size: 16px;
     }
-    #reader { margin-top: 20px; }
-    #result {
+    button { cursor: pointer; }
+    #status {
       padding: 15px;
       margin-top: 15px;
-      background: #eeeeee;
+      background: white;
+      border-radius: 8px;
       overflow-wrap: anywhere;
+      font-weight: bold;
     }
+    #details { white-space: pre-line; }
   </style>
 </head>
 <body>
   <h2>Function Gate Pass Scanner</h2>
-  <p>Camera test — QR scanning only</p>
-  <button id="start">Start Camera</button>
-  <button id="stop">Stop Camera</button>
+  <p>Scan each guest's QR pass once.</p>
+
+  <label for="gate">Select Gate:</label>
+  <select id="gate">
+    <option>Gate 1</option>
+    <option>Gate 2</option>
+    <option>Gate 3</option>
+    <option>Gate 4</option>
+    <option>Gate 5</option>
+  </select>
+
   <div id="reader"></div>
-  <div id="result">Waiting to start camera...</div>
 
-  <script>
-    let scanner = null;
+  <button id="startBtn" onclick="startScanner()">Start Camera</button>
+  <button onclick="stopScanner()">Stop Camera</button>
 
-    document.getElementById("start").onclick = async function () {
-      const result = document.getElementById("result");
-      result.textContent = "Starting camera...";
+  <div id="status">Ready to scan.</div>
+  <p id="details"></p>
 
-      try {
-        scanner = new Html5Qrcode("reader");
-        await scanner.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: 250 },
-          function (text) {
-            result.textContent = "QR code scanned: " + text;
-          },
-          function () {}
-        );
-        result.textContent = "Camera started. Point it at a QR code.";
-      } catch (error) {
-        result.textContent = "Camera error: " + String(error);
-      }
-    };
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycbxeEqOFDuVQx5xpzTFftgaCNRYiqW9eiJeJaRC-GI6SieJy_hwjrQBfZuOOwURMFfEK/exec";
 
-    document.getElementById("stop").onclick = async function () {
-      if (scanner && scanner.isScanning) {
-        await scanner.stop();
-        scanner.clear();
-        scanner = null;
-      }
-      document.getElementById("result").textContent = "Camera stopped.";
-    };
-  </script>
+let scanner = null;
+let busy = false;
+let lastPayload = "";
+let lastScanTime = 0;
+let requestNumber = 0;
+
+function showStatus(message) {
+  document.getElementById("status").textContent = message;
+}
+
+function startScanner() {
+  if (scanner) return;
+
+  scanner = new Html5Qrcode("reader");
+  showStatus("Starting camera...");
+
+  scanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 250, height: 250 } },
+    onScanSuccess,
+    () => {}
+  ).then(() => {
+    showStatus("Camera ready. Scan a guest pass.");
+  }).catch(error => {
+    scanner = null;
+    showStatus("Camera error: " + error);
+  });
+}
+
+async function stopScanner() {
+  if (!scanner) return;
+  try {
+    await scanner.stop();
+    await scanner.clear();
+  } catch (error) {
+    console.log(error);
+  }
+  scanner = null;
+  showStatus("Camera stopped.");
+}
+
+function onScanSuccess(decodedText) {
+  const now = Date.now();
+
+  if (busy) return;
+  if (decodedText === lastPayload && now - lastScanTime < 5000) return;
+
+  lastPayload = decodedText;
+  lastScanTime = now;
+  busy = true;
+
+  showStatus("Checking pass and recording entry...");
+  document.getElementById("details").textContent = "";
+
+  const callbackName = "gateScanCallback" + (++requestNumber);
+  const script = document.createElement("script");
+  let finished = false;
+
+  const timeout = setTimeout(() => {
+    finish();
+    showStatus("No response from server. Check deployment and try again.");
+  }, 20000);
+
+  function finish() {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timeout);
+    delete window[callbackName];
+    script.remove();
+    busy = false;
+  }
+
+  window[callbackName] = function(result) {
+    finish();
+
+    if (result && result.success) {
+      showStatus("SUCCESS — ENTRY RECORDED");
+      document.getElementById("details").textContent =
+        "Name: " + (result.name || "") +
+        "\nClass: " + (result.className || "");
+    } else if (result && result.duplicate) {
+      showStatus("DUPLICATE ENTRY — ALREADY SCANNED");
+      document.getElementById("details").textContent =
+        result.message || "This pass has already been used.";
+    } else {
+      showStatus("ENTRY NOT RECORDED");
+      document.getElementById("details").textContent =
+        result && result.message ? result.message : "Unknown server response.";
+    }
+  };
+
+  const params = new URLSearchParams({
+    action: "scan",
+    payload: decodedText,
+    gate: document.getElementById("gate").value,
+    callback: callbackName
+  });
+
+  script.onerror = function() {
+    finish();
+    showStatus("Could not contact the server. Check the web app URL and access settings.");
+  };
+
+  script.src = API_URL + "?" + params.toString();
+  document.body.appendChild(script);
+}
+</script>
 </body>
 </html>
-
