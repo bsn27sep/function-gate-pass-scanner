@@ -5,165 +5,337 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Function Gate Pass Scanner</title>
-  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
   <style>
+    * { box-sizing: border-box; }
+
     body {
       font-family: Arial, sans-serif;
-      max-width: 600px;
-      margin: 20px auto;
-      padding: 16px;
-      text-align: center;
-      background: #f4f6f8;
+      margin: 0;
+      padding: 15px;
+      background: #eef2f7;
+      color: #222;
     }
-    h2 { color: #17365d; }
-    #reader { width: 100%; margin: 15px auto; }
-    button, select {
-      padding: 12px;
-      margin: 6px;
+
+    .container {
+      max-width: 500px;
+      margin: auto;
+      padding: 20px;
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 3px 12px #0002;
+    }
+
+    h1 {
+      text-align: center;
+      color: #17365d;
+      font-size: 25px;
+      margin: 5px 0;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #555;
+      margin: 10px 0 20px;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin-top: 12px;
+    }
+
+    select, button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 8px;
+      border-radius: 8px;
       font-size: 16px;
     }
-    button { cursor: pointer; }
-    #status {
-      padding: 15px;
-      margin-top: 15px;
-      background: white;
-      border-radius: 8px;
-      overflow-wrap: anywhere;
+
+    select { border: 1px solid #aaa; background: white; }
+
+    button {
+      border: none;
+      cursor: pointer;
+      color: white;
       font-weight: bold;
     }
-    #details { white-space: pre-line; }
+
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .start { background: #1769aa; }
+    .stop { background: #555; }
+    .again { background: #198754; }
+
+    #reader {
+      width: 100%;
+      margin-top: 18px;
+      overflow: hidden;
+      border-radius: 8px;
+    }
+
+    #result {
+      padding: 16px;
+      margin-top: 18px;
+      border-radius: 8px;
+      background: #e8edf3;
+      text-align: center;
+      font-size: 17px;
+      font-weight: bold;
+      white-space: pre-line;
+      overflow-wrap: anywhere;
+    }
+
+    #details {
+      margin-top: 12px;
+      padding: 12px;
+      background: #f5f7fa;
+      border-radius: 8px;
+      line-height: 1.7;
+      white-space: pre-line;
+    }
+
+    .note {
+      font-size: 13px;
+      color: #666;
+      text-align: center;
+      margin-top: 15px;
+      line-height: 1.5;
+    }
   </style>
 </head>
+
 <body>
-  <h2>Function Gate Pass Scanner</h2>
-  <p>Scan each guest's QR pass once.</p>
+  <main class="container">
+    <h1>FUNCTION GATE PASS</h1>
+    <div class="subtitle">Student QR Entry Scanner</div>
 
-  <label for="gate">Select Gate:</label>
-  <select id="gate">
-    <option>Gate 1</option>
-    <option>Gate 2</option>
-    <option>Gate 3</option>
-    <option>Gate 4</option>
-    <option>Gate 5</option>
-  </select>
+    <label for="gate">Select Entrance Gate</label>
+    <select id="gate">
+      <option>Gate 1</option>
+      <option>Gate 2</option>
+      <option>Gate 3</option>
+      <option>Gate 4</option>
+      <option>Gate 5</option>
+    </select>
 
-  <div id="reader"></div>
+    <button id="startButton" class="start" onclick="startScanner()">
+      START QR SCANNER
+    </button>
 
-  <button id="startBtn" onclick="startScanner()">Start Camera</button>
-  <button onclick="stopScanner()">Stop Camera</button>
+    <button id="stopButton" class="stop" onclick="stopScanner()" disabled>
+      STOP SCANNER
+    </button>
 
-  <div id="status">Ready to scan.</div>
-  <p id="details"></p>
+    <div id="reader"></div>
 
-<script>
-const API_URL = "https://script.google.com/macros/s/AKfycbxeEqOFDuVQx5xpzTFftgaCNRYiqW9eiJeJaRC-GI6SieJy_hwjrQBfZuOOwURMFfEK/exec";
+    <div id="result" role="status" aria-live="polite">
+      Ready to scan a student QR code.
+    </div>
 
-let scanner = null;
-let busy = false;
-let lastPayload = "";
-let lastScanTime = 0;
-let requestNumber = 0;
+    <div id="details" hidden></div>
 
-function showStatus(message) {
-  document.getElementById("status").textContent = message;
-}
+    <button id="againButton" class="again" onclick="prepareNextScan()" hidden>
+      SCAN NEXT STUDENT
+    </button>
 
-function startScanner() {
-  if (scanner) return;
+    <div class="note">
+      Keep the QR code inside the camera frame.<br>
+      Each valid pass can be recorded only once.
+    </div>
+  </main>
 
-  scanner = new Html5Qrcode("reader");
-  showStatus("Starting camera...");
+  <script>
+    // Existing deployed Apps Script URL
+    const API_URL =
+      "https://script.google.com/macros/s/AKfycbxeEqOFDuVQx5xpzTFftgaCNRYiqW9eiJeJaRC-GI6SieJy_hwjrQBfZuOOwURMFfEK/exec";
 
-  scanner.start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: { width: 250, height: 250 } },
-    onScanSuccess,
-    () => {}
-  ).then(() => {
-    showStatus("Camera ready. Scan a guest pass.");
-  }).catch(error => {
-    scanner = null;
-    showStatus("Camera error: " + error);
-  });
-}
+    let scanner = null;
+    let scannerRunning = false;
+    let checking = false;
+    let lastText = "";
+    let lastTime = 0;
+    let requestTimer = null;
 
-async function stopScanner() {
-  if (!scanner) return;
-  try {
-    await scanner.stop();
-    await scanner.clear();
-  } catch (error) {
-    console.log(error);
-  }
-  scanner = null;
-  showStatus("Camera stopped.");
-}
+    const $ = id => document.getElementById(id);
 
-function onScanSuccess(decodedText) {
-  const now = Date.now();
-
-  if (busy) return;
-  if (decodedText === lastPayload && now - lastScanTime < 5000) return;
-
-  lastPayload = decodedText;
-  lastScanTime = now;
-  busy = true;
-
-  showStatus("Checking pass and recording entry...");
-  document.getElementById("details").textContent = "";
-
-  const callbackName = "gateScanCallback" + (++requestNumber);
-  const script = document.createElement("script");
-  let finished = false;
-
-  const timeout = setTimeout(() => {
-    finish();
-    showStatus("No response from server. Check deployment and try again.");
-  }, 20000);
-
-  function finish() {
-    if (finished) return;
-    finished = true;
-    clearTimeout(timeout);
-    delete window[callbackName];
-    script.remove();
-    busy = false;
-  }
-
-  window[callbackName] = function(result) {
-    finish();
-
-    if (result && result.success) {
-      showStatus("SUCCESS — ENTRY RECORDED");
-      document.getElementById("details").textContent =
-        "Name: " + (result.name || "") +
-        "\nClass: " + (result.className || "");
-    } else if (result && result.duplicate) {
-      showStatus("DUPLICATE ENTRY — ALREADY SCANNED");
-      document.getElementById("details").textContent =
-        result.message || "This pass has already been used.";
-    } else {
-      showStatus("ENTRY NOT RECORDED");
-      document.getElementById("details").textContent =
-        result && result.message ? result.message : "Unknown server response.";
+    function showResult(message, background = "#e8edf3", color = "#222") {
+      $("result").textContent = message;
+      $("result").style.background = background;
+      $("result").style.color = color;
     }
-  };
 
-  const params = new URLSearchParams({
-    action: "scan",
-    payload: decodedText,
-    gate: document.getElementById("gate").value,
-    callback: callbackName
-  });
+    function showDetails(name, studentClass) {
+      $("details").hidden = false;
+      $("details").textContent =
+        "Student Name: " + (name || "Not available") +
+        "\nClass: " + (studentClass || "Not available");
+    }
 
-  script.onerror = function() {
-    finish();
-    showStatus("Could not contact the server. Check the web app URL and access settings.");
-  };
+    function hideDetails() {
+      $("details").hidden = true;
+      $("againButton").hidden = true;
+    }
 
-  script.src = API_URL + "?" + params.toString();
-  document.body.appendChild(script);
-}
-</script>
+    async function startScanner() {
+      if (scannerRunning) return;
+
+      $("startButton").disabled = true;
+      showResult("Starting camera...", "#fff3cd", "#664d03");
+
+      try {
+        if (!window.isSecureContext || !navigator.mediaDevices) {
+          throw new Error("Open this scanner using an HTTPS address.");
+        }
+
+        if (typeof Html5Qrcode === "undefined") {
+          throw new Error("QR library failed to load. Check internet access.");
+        }
+
+        scanner = new Html5Qrcode("reader");
+
+        await scanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1
+          },
+          onQRCodeScanned,
+          () => {}
+        );
+
+        scannerRunning = true;
+        $("stopButton").disabled = false;
+        showResult("Scanner ready. Point the camera at a QR code.", "#d1e7dd", "#0f5132");
+
+      } catch (error) {
+        scanner = null;
+        showResult(
+          "CAMERA ERROR\n" + (error.message || String(error)) +
+          "\nCheck Chrome camera permission.",
+          "#f8d7da", "#842029"
+        );
+      } finally {
+        $("startButton").disabled = false;
+      }
+    }
+
+    function onQRCodeScanned(decodedText) {
+      if (checking) return;
+
+      const now = Date.now();
+      if (decodedText === lastText && now - lastTime < 4000) return;
+
+      checking = true;
+      lastText = decodedText;
+      lastTime = now;
+      hideDetails();
+
+      showResult("QR DETECTED\nChecking student records...", "#fff3cd", "#664d03");
+      sendScan(decodedText, $("gate").value);
+    }
+
+    // JSONP matches the doGet(e) endpoint in Code.gs.
+    function sendScan(payload, gate) {
+      const callbackName = "gateScanCallback_" + Date.now() + "_" +
+        Math.floor(Math.random() * 1000000);
+
+      const script = document.createElement("script");
+      const params = new URLSearchParams({
+        action: "scan",
+        payload: payload,
+        gate: gate,
+        callback: callbackName
+      });
+
+      let finished = false;
+
+      function finish() {
+        if (finished) return;
+        finished = true;
+        clearTimeout(requestTimer);
+        delete window[callbackName];
+        script.remove();
+        checking = false;
+        $("againButton").hidden = false;
+      }
+
+      window[callbackName] = function(response) {
+        finish();
+
+        if (!response) {
+          showResult("SERVER ERROR\nEmpty response received.", "#f8d7da", "#842029");
+          return;
+        }
+
+        if (response.success) {
+          showResult("ENTRY SUCCESSFUL", "#198754", "#ffffff");
+          showDetails(response.name, response.className);
+        } else if (response.duplicate) {
+          showResult("ALREADY ENTERED\n" + response.message, "#f8d7da", "#842029");
+        } else {
+          showResult("ENTRY NOT RECORDED\n" + (response.message || "Unknown error"), "#f8d7da", "#842029");
+        }
+      };
+
+      script.onerror = function() {
+        finish();
+        showResult(
+          "SERVER CONNECTION FAILED\nCheck deployment access, URL and internet connection.",
+          "#f8d7da", "#842029"
+        );
+      };
+
+      requestTimer = setTimeout(function() {
+        finish();
+        showResult(
+          "SERVER TIMEOUT\nThe server did not respond. Check deployment and try again.",
+          "#f8d7da", "#842029"
+        );
+      }, 20000);
+
+      script.src = API_URL + "?" + params.toString();
+      document.body.appendChild(script);
+    }
+
+    function prepareNextScan() {
+      lastText = "";
+      lastTime = 0;
+      checking = false;
+      hideDetails();
+
+      showResult(
+        scannerRunning ? "Ready. Scan the next student." : "Tap START QR SCANNER to begin."
+      );
+    }
+
+    async function stopScanner() {
+      $("stopButton").disabled = true;
+
+      if (scanner) {
+        try {
+          if (scanner.isScanning) await scanner.stop();
+          await scanner.clear();
+        } catch (error) {
+          console.error("Scanner stop error:", error);
+        }
+      }
+
+      scanner = null;
+      scannerRunning = false;
+      checking = false;
+      $("startButton").disabled = false;
+      showResult("Scanner stopped.");
+    }
+
+    window.addEventListener("load", function() {
+      if (typeof Html5Qrcode === "undefined") {
+        showResult("QR LIBRARY NOT LOADED\nCheck your internet connection and reload.");
+      }
+    });
+  </script>
 </body>
 </html>
